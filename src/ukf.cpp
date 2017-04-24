@@ -25,10 +25,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  std_a_ = 2;  // Bike acceleration.  0-6 m/s in 3 seconds -> 2 m/s^2 or 0.2g
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 2.5; // Bike turn rate.  Complete circle in 5 seconds.  Opposite circle in 1 second -> 2.5 rad/s^2
 
   // Laser measurement noise standard deviation position1 in m
   std_laspx_ = 0.15;
@@ -52,6 +52,22 @@ UKF::UKF() {
 
   Hint: one or more values initialized above might be wildly off...
   */
+	// size of state vector
+	n_x_ = x_.size();
+
+	// size of augmented state vector
+	n_aug_ = n_x_ + 2;  // +1 for std_a_ and +1 for std_yawdd_
+
+	// define spreading parameters
+	lambda_ = 3 - n_x_;
+
+	// initialize weights
+	weights_ = VectorXd(2 * n_aug_ + 1);
+	weights_.fill(0.0);
+
+	// Initialize NIS for radar and lidar
+	NIS_radar_ = 0.0;
+	NIS_laser_ = 0.0;
 }
 
 UKF::~UKF() {}
@@ -66,6 +82,15 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   Complete this function! Make sure you switch between lidar and radar
   measurements.
+
+	first measurement
+	- initialize x_
+	- initialize P_
+	- store time
+
+	- calculate dt
+	- send measurement to correct update process
+
   */
 }
 
