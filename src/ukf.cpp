@@ -62,7 +62,7 @@ UKF::UKF() {
 	n_aug_ = n_x_ + 2;  // +1 for std_a_ and +1 for std_yawdd_
 
 	// define spreading parameters
-	lambda_ = 3 - n_x_;
+	lambda_ = 3 - n_aug_;
 
 	// initialize weights
 	weights_ = VectorXd(2 * n_aug_ + 1);
@@ -80,22 +80,6 @@ UKF::~UKF() {}
  * either radar or laser.
  */
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
-  /**
-  TODO:
-
-  Complete this function! Make sure you switch between lidar and radar
-  measurements.
-
-	first measurement
-	- initialize x_
-	- initialize P_
-	- store time
-
-	- calculate dt
-	- send measurement to correct update process
-
-  */
-
 	// Initialize with first measurement
 	if (!is_initialized_) {
 		time_us_ = meas_package.timestamp_;
@@ -144,11 +128,20 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
 	// After initialization, standard UKF process loop
 	else {
-		// Process Radar measurement
+		// Calculate time step
+		double dt = meas_package.timestamp_ - time_us_;
+		time_us_ = meas_package.timestamp_;
+
+		// Predict
+		Prediction(dt);
+
+		// Update Radar
 		if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+			UpdateRadar(meas_package);
 		}
-		// Proces Lidar measurement
+		// Update Lidar
 		else if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+			UpdateLidar(meas_package);
 		}
 	}
 
@@ -166,6 +159,10 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
+
+	// Generate augmented sigma points
+	// Predict sigma points
+	// predicted mean and covariance
 }
 
 /**
@@ -181,6 +178,10 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+
+	// Predict Lidar measurement
+	// Update State
+
 }
 
 /**
@@ -196,4 +197,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
+
+	// Predict Radar measurement
+	// Update state
 }
