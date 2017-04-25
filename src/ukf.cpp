@@ -68,6 +68,10 @@ UKF::UKF() {
 	weights_ = VectorXd(2 * n_aug_ + 1);
 	weights_.fill(0.0);
 
+	// Initialize sigma points
+	Xsig_pred_ = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+	Xsig_pred_.fill(0.0);
+
 	// Initialize NIS for radar and lidar
 	NIS_radar_ = 0.0;
 	NIS_laser_ = 0.0;
@@ -161,6 +165,29 @@ void UKF::Prediction(double delta_t) {
   */
 
 	// Generate augmented sigma points
+	//// Create augmented mean state
+	VectorXd x_aug = VectorXd(n_aug_);
+	x_aug.fill(0.0);
+	x_aug.head(n_x_) = x_;
+
+	//// Create augmented covariance matrix
+	MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
+	P_aug.fill(0.0);
+	P_aug.topLeftCorner(n_x_, n_x_) = P_;    // original covariance in upper left
+	P_aug(n_x_, n_x_) = std_a_*std_a_;    // variance of acceleration
+	P_aug(n_x_+1, n_x_+1) = std_yawdd_*std_yawdd_;  // variance of yaw acceleration
+
+	//// Calculate common values
+	MatrixXd L = P_aug.llt().matrixL();  // sqrt of P_aug
+	L *= sqrt(lambda_ + n_aug_);  // sigma point calculation sqrt term
+
+	//// Calculate sigma points
+	Xsig_pred_.col(0) = x_aug;
+	for (int i = 0; i < n_aug_; i++) {
+		Xsig_pred_.col(i + 1) = x_aug + L.col(i);
+		Xsig_pred_.col(i + 1 + n_aug_) = x_aug - L.col(i);
+	}
+
 	// Predict sigma points
 	// predicted mean and covariance
 }
