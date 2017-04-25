@@ -164,31 +164,85 @@ void UKF::Prediction(double delta_t) {
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
 
-	// Generate augmented sigma points
-	//// Create augmented mean state
+	/**
+	Generate augmented sigma points
+	*/
+
+	// Create augmented mean state
 	VectorXd x_aug = VectorXd(n_aug_);
 	x_aug.fill(0.0);
 	x_aug.head(n_x_) = x_;
 
-	//// Create augmented covariance matrix
+	// Create augmented covariance matrix
 	MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
 	P_aug.fill(0.0);
 	P_aug.topLeftCorner(n_x_, n_x_) = P_;    // original covariance in upper left
 	P_aug(n_x_, n_x_) = std_a_*std_a_;    // variance of acceleration
 	P_aug(n_x_+1, n_x_+1) = std_yawdd_*std_yawdd_;  // variance of yaw acceleration
 
-	//// Calculate common values
+	// Calculate common values
 	MatrixXd L = P_aug.llt().matrixL();  // sqrt of P_aug
 	L *= sqrt(lambda_ + n_aug_);  // sigma point calculation sqrt term
 
-	//// Calculate sigma points
-	Xsig_pred_.col(0) = x_aug;
+	// Calculate sigma points
+	MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+	Xsig_aug.fill(0.0);
+	Xsig_aug.col(0) = x_aug;
 	for (int i = 0; i < n_aug_; i++) {
-		Xsig_pred_.col(i + 1) = x_aug + L.col(i);
-		Xsig_pred_.col(i + 1 + n_aug_) = x_aug - L.col(i);
+		Xsig_aug.col(i + 1)          = x_aug + L.col(i);
+		Xsig_aug.col(i + 1 + n_aug_) = x_aug - L.col(i);
 	}
 
-	// Predict sigma points
+	/**
+	Predict sigma points
+	*/
+	// Iterate through each sigma point and predict
+	for (int i = 0; i < Xsig_aug.cols(); i++) {
+		// Extract sigma point values for readability
+		double px = Xsig_aug(0, i);					// x position
+		double py = Xsig_aug(1, i);					// y position
+		double v = Xsig_aug(2, i);					// heading velocity
+		double psi = Xsig_aug(3, i);				// yaw
+		double psi_d = Xsig_aug(4, i);			// yaw rate
+		double nu_a = Xsig_aug(5, i);				// aceleration variance
+		double nu_psi_dd = Xsig_aug(6, i);	// Yaw acceleration variance
+
+		// Extract state values for readability
+		double px_p = x_(0);		// x position
+		double py_p = x_(1);		// y position
+		double v_p = x_(2);			// heading velocity
+		double psi_p = x_(3);		// yaw
+		double psi_d_p = x_(4);	// yaw rate
+
+		// add process
+		if (fabs(psi_d) > 0.0001) {
+			double angle = psi + psi_d*delta_t;
+			px_p += v / psi_d*(sin(angle) - sin(psi));
+			py_p += v / psi_d*(-cos(angle) + cos(psi));
+			psi_p += psi_d * delta_t;
+		}
+		//avoid division by zero
+		else {
+			px_p += v * cos(psi) * delta_t;
+			py_p += v * sin(psi) * delta_t;
+		}
+
+		// add noise
+		double dt2 = delta_t * delta_t;
+		px_p += 0.5 * dt2 * cos(psi) * nu_a;
+		py_p += 0.5 * dt2 * sin(psi) * nu_a;
+		v_p += delta_t * nu_a;
+		psi_p += 0.5 * dt2 * nu_psi_dd;
+		psi_d_p += delta_t * nu_psi_dd;
+
+		//write predicted sigma points into right column
+		Xsig_pred_(0, i) = px_p;
+		Xsig_pred_(1, i) = py_p;
+		Xsig_pred_(2, i) = v_p;
+		Xsig_pred_(3, i) = psi_p;
+		Xsig_pred_(4, i) = psi_d_p;
+	}
+
 	// predicted mean and covariance
 }
 
