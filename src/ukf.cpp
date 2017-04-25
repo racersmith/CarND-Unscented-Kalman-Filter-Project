@@ -52,6 +52,9 @@ UKF::UKF() {
 
   Hint: one or more values initialized above might be wildly off...
   */
+	// first measurement flag
+	is_initialized_ = false;
+
 	// size of state vector
 	n_x_ = x_.size();
 
@@ -92,6 +95,63 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 	- send measurement to correct update process
 
   */
+
+	// Initialize with first measurement
+	if (!is_initialized_) {
+		time_us_ = meas_package.timestamp_;
+
+		// Initialize with Radar measurement
+		if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+			// Set initial covariance
+			P_ << 
+				0.6, 0, 0, 0, 0,
+				0, 0.6, 0, 0, 0,
+				0, 0, 100, 0, 0,
+				0, 0, 0, 100, 0,
+				0, 0, 0, 0, 100;
+
+			// Extract radar values for readability
+			double range = meas_package.raw_measurements_[0];
+			double bearing = meas_package.raw_measurements_[1];
+
+			// convert to cartesion coordinates
+			x_ <<
+				range * cos(bearing),
+				range * sin(bearing),
+				0,
+				0,
+				0;
+		}
+		// Initialize with Lidar measurement
+		else if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+			// Set initial covariance
+			P_ <<
+				0.3, 0, 0, 0, 0,
+				0, 0.3, 0, 0, 0,
+				0, 0, 100, 0, 0,
+				0, 0, 0, 100, 0,
+				0, 0, 0, 0, 100;
+
+			// Extract laser data for readability
+			double x = meas_package.raw_measurements_[0];
+			double y = meas_package.raw_measurements_[1];
+			x_ << x, y, 0.0, 0.0, 0.0;
+		}
+
+		// done initializing, no need to predict or update
+		is_initialized_ = true;
+	}
+
+	// After initialization, standard UKF process loop
+	else {
+		// Process Radar measurement
+		if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+		}
+		// Proces Lidar measurement
+		else if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+		}
+	}
+
 }
 
 /**
