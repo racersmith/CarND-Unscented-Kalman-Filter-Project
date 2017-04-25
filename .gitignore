@@ -3,3 +3,10 @@
 
 # build files
 build/
+/.vs
+/UnscentedKF.vcxproj.filters
+/UnscentedKF.vcxproj
+/UnscentedKF.sln
+/x64/Debug
+/UnscentedKF.vcxproj.user
+/out_data
