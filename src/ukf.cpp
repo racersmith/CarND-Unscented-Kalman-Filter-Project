@@ -61,12 +61,19 @@ UKF::UKF() {
 	// size of augmented state vector
 	n_aug_ = n_x_ + 2;  // +1 for std_a_ and +1 for std_yawdd_
 
+	// number of sigma points
+	n_sig_ = 2 * n_aug_ + 1;
+
 	// define spreading parameters
 	lambda_ = 3 - n_aug_;
 
-	// initialize weights
-	weights_ = VectorXd(2 * n_aug_ + 1);
+	// Calculate weights
+	weights_ = VectorXd(n_sig_);
 	weights_.fill(0.0);
+	weights_(0) = lambda_ / (lambda_ + n_aug_);
+	for (int i = 1; i<n_sig_; i++) {
+		weights_(i) = 1 / (2 * (lambda_ + n_aug_));
+	}
 
 	// Initialize sigma points
 	Xsig_pred_ = MatrixXd(n_aug_, 2 * n_aug_ + 1);
@@ -186,7 +193,7 @@ void UKF::Prediction(double delta_t) {
 	L *= sqrt(lambda_ + n_aug_);  // sigma point calculation sqrt term
 
 	// Calculate sigma points
-	MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+	MatrixXd Xsig_aug = MatrixXd(n_aug_, n_sig_);
 	Xsig_aug.fill(0.0);
 	Xsig_aug.col(0) = x_aug;
 	for (int i = 0; i < n_aug_; i++) {
@@ -200,7 +207,7 @@ void UKF::Prediction(double delta_t) {
 	*/
 
 	// Iterate through each sigma point and predict
-	for (int i = 0; i < Xsig_aug.cols(); i++) {
+	for (int i = 0; i < n_sig_; i++) {
 		// Extract sigma point values for readability
 		double px = Xsig_aug(0, i);					// x position
 		double py = Xsig_aug(1, i);					// y position
@@ -238,7 +245,7 @@ void UKF::Prediction(double delta_t) {
 		psi_p += 0.5 * dt2 * nu_psi_dd;
 		psi_d_p += delta_t * nu_psi_dd;
 
-		// write predicted sigma points into right column
+		// Write predicted sigma points into right column
 		Xsig_pred_(0, i) = px_p;
 		Xsig_pred_(1, i) = py_p;
 		Xsig_pred_(2, i) = v_p;
@@ -250,19 +257,14 @@ void UKF::Prediction(double delta_t) {
 	/**
 	Predicted state mean and covariance
 	*/
-	// Set weights
-	weights_(0) = lambda_ / (lambda_ + n_aug_);
-	for (int i = 1; i<Xsig_pred_.cols(); i++) {
-		weights_(i) = 1 / (2 * (lambda_ + n_aug_));
-	}
 
-	// Predict state mean   
-	for (int i = 0; i<Xsig_pred_.cols(); i++) {
+	// Predicted state mean   
+	for (int i = 0; i<n_sig_; i++) {
 		x_ += weights_(i)*Xsig_pred_.col(i);
 	}
 
-	// Predict state covariance matrix
-	for (int i = 0; i<Xsig_pred_.cols(); i++) {
+	// Predicted state covariance matrix
+	for (int i = 0; i<n_sig_; i++) {
 		// Difference vector
 		VectorXd A = Xsig_pred_.col(i) - x_;
 
@@ -289,9 +291,60 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   You'll also need to calculate the lidar NIS.
   */
 
-	// Predict Lidar measurement
-	// Update State
+	
+	/**
+	Predict Lidar measurement
+	*/
 
+	// Transform sigma points to measurement space
+	int n_z = 2;    // Dimension of measurement
+	MatrixXd Z_sig = Xsig_pred_.topRows(n_z);  // Transform is just the x, y terms
+
+	// Calculate mean of predicted measurement
+	VectorXd z_pred = VectorXd(n_aug_);
+	z_pred.fill(0.0);
+	for (int i = 0; i < n_sig_; i++) {
+		z_pred += weights_(i) * Z_sig.col(i);
+	}
+
+	// Calculate covariance of predicted measurement
+	MatrixXd S = MatrixXd(n_z, n_z);
+	S.fill(0.0);
+	for (int i = 0; i < n_sig_; i++) {
+		// Residual
+		VectorXd z_diff = Z_sig.col(i) - z_pred;
+
+		// Calculate covariance
+		S = S + weights_(i) * z_diff * z_diff.transpose();
+	}
+
+
+	/**
+	Update State
+	*/
+
+	// Calculate cross correlation matrix
+	MatrixXd Tc = MatrixXd(n_x_, n_z);
+	Tc.fill(0.0);
+	for (int i = 0; i < n_sig_; i++) {
+		// Residual of state
+		VectorXd x_diff = Xsig_pred_.col(i) - x_;
+		NormalizeAngle(x_diff(3));  // heading
+
+		// Residual of predicted measurment and sigma point
+		VectorXd z_diff = Z_sig.col(i) - z_pred;
+
+		Tc += weights_(i) * x_diff * z_diff.transpose();
+	}
+	// Kalman gain K
+	MatrixXd K = Tc * S.inverse();
+
+	// Residual of measurement to prediction
+	VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
+
+	// Update state and covariance
+	x_ += K * z_diff;
+	P_ -= K * S * K.transpose();
 }
 
 /**
@@ -308,6 +361,85 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   You'll also need to calculate the radar NIS.
   */
 
-	// Predict Radar measurement
-	// Update state
+	// Transform sigma points to measurement space
+	int n_z = 3;    // Dimension of measurement
+	MatrixXd Z_sig = MatrixXd(n_z, n_sig_);
+	for (int i = 0; i < n_sig_; i++) {
+		
+		// extract values for better readibility
+		double p_x = Xsig_pred_(0, i);
+		double p_y = Xsig_pred_(1, i);
+		double v = Xsig_pred_(2, i);
+		double yaw = Xsig_pred_(3, i);
+
+		// calculate common values
+		double v_cos_yaw = cos(yaw)*v;
+		double v_sin_yaw = sin(yaw)*v;
+
+		// measurement model
+		Z_sig(0, i) = sqrt(p_x*p_x + p_y*p_y);												// r, Range
+		Z_sig(1, i) = atan2(p_y, p_x);																// phi, Bearing
+		Z_sig(2, i) = (p_x*v_cos_yaw + p_y*v_sin_yaw) / Z_sig(0, i);	// r_dot, Range Rate
+	}
+	
+	// Calculate mean of predicted measurement
+	VectorXd z_pred = VectorXd(n_aug_);
+	z_pred.fill(0.0);
+	for (int i = 0; i < n_sig_; i++) {
+		z_pred += weights_(i) * Z_sig.col(i);
+	}
+
+	// Calculate covariance of predicted radar measurement
+	MatrixXd S = MatrixXd(n_z, n_z);
+	S.fill(0.0);
+
+	for (int i = 0; i < n_sig_; i++) {
+		// Residual
+		VectorXd z_diff = Z_sig.col(i) - z_pred;
+
+		// Angle normalization
+		NormalizeAngle(z_diff(1));
+
+		// Calculate covariance
+		S = S + weights_(i) * z_diff * z_diff.transpose();
+	}
+
+
+	/**
+	Update State
+	*/
+
+	// Calculate cross correlation matrix, Tc
+	MatrixXd Tc = MatrixXd(n_x_, n_z);
+	Tc.fill(0.0);
+	for (int i = 0; i < n_sig_; i++) {
+		// Residual of state
+		VectorXd x_diff = Xsig_pred_.col(i) - x_;
+		NormalizeAngle(x_diff(3));  // heading
+
+		// Residual of predicted measurment and sigma point
+		VectorXd z_diff = Z_sig.col(i) - z_pred;
+		NormalizeAngle(z_diff(1));  // bearing
+
+		Tc += weights_(i) * x_diff * z_diff.transpose();
+	}
+	// Kalman gain K
+	MatrixXd K = Tc * S.inverse();
+
+	// Residual of measurement to prediction
+	VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
+
+	NormalizeAngle(z_diff(1));  // bearing
+
+	// Update state and covariance
+	x_ += K * z_diff;
+	P_ -= K * S * K.transpose();
+}
+
+void UKF::NormalizeAngle(double &angle) {
+	// Constrain to less than pi
+	while (angle >  M_PI) angle -= 2.0*M_PI;
+
+	// Constrain to greater than -pi
+	while (angle < -M_PI) angle += 2.0*M_PI;
 }
