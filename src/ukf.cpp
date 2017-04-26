@@ -164,6 +164,7 @@ void UKF::Prediction(double delta_t) {
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
 
+
 	/**
 	Generate augmented sigma points
 	*/
@@ -193,9 +194,11 @@ void UKF::Prediction(double delta_t) {
 		Xsig_aug.col(i + 1 + n_aug_) = x_aug - L.col(i);
 	}
 
+
 	/**
 	Predict sigma points
 	*/
+
 	// Iterate through each sigma point and predict
 	for (int i = 0; i < Xsig_aug.cols(); i++) {
 		// Extract sigma point values for readability
@@ -214,20 +217,20 @@ void UKF::Prediction(double delta_t) {
 		double psi_p = x_(3);		// yaw
 		double psi_d_p = x_(4);	// yaw rate
 
-		// add process
+		// Add process
 		if (fabs(psi_d) > 0.0001) {
 			double angle = psi + psi_d*delta_t;
 			px_p += v / psi_d*(sin(angle) - sin(psi));
 			py_p += v / psi_d*(-cos(angle) + cos(psi));
 			psi_p += psi_d * delta_t;
 		}
-		//avoid division by zero
+		// Avoid division by zero
 		else {
 			px_p += v * cos(psi) * delta_t;
 			py_p += v * sin(psi) * delta_t;
 		}
 
-		// add noise
+		// Add noise
 		double dt2 = delta_t * delta_t;
 		px_p += 0.5 * dt2 * cos(psi) * nu_a;
 		py_p += 0.5 * dt2 * sin(psi) * nu_a;
@@ -235,7 +238,7 @@ void UKF::Prediction(double delta_t) {
 		psi_p += 0.5 * dt2 * nu_psi_dd;
 		psi_d_p += delta_t * nu_psi_dd;
 
-		//write predicted sigma points into right column
+		// write predicted sigma points into right column
 		Xsig_pred_(0, i) = px_p;
 		Xsig_pred_(1, i) = py_p;
 		Xsig_pred_(2, i) = v_p;
@@ -243,7 +246,33 @@ void UKF::Prediction(double delta_t) {
 		Xsig_pred_(4, i) = psi_d_p;
 	}
 
-	// predicted mean and covariance
+
+	/**
+	Predicted state mean and covariance
+	*/
+	// Set weights
+	weights_(0) = lambda_ / (lambda_ + n_aug_);
+	for (int i = 1; i<Xsig_pred_.cols(); i++) {
+		weights_(i) = 1 / (2 * (lambda_ + n_aug_));
+	}
+
+	// Predict state mean   
+	for (int i = 0; i<Xsig_pred_.cols(); i++) {
+		x_ += weights_(i)*Xsig_pred_.col(i);
+	}
+
+	// Predict state covariance matrix
+	for (int i = 0; i<Xsig_pred_.cols(); i++) {
+		// Difference vector
+		VectorXd A = Xsig_pred_.col(i) - x_;
+
+		// Normalize angle
+		while (A(3) > M_PI) A(3) -= 2.0*M_PI;
+		while (A(3) < -M_PI) A(3) += 2.0*M_PI;
+
+		// Calculate covariance
+		P_ += weights_(i)*A*A.transpose();
+	}
 }
 
 /**
