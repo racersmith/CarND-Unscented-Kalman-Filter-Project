@@ -115,7 +115,7 @@ public:
 	/**
 	* A helper method to normalize angles to +/- Pi.
 	*/
-	void NormalizeAngle(double &angle);
+	double NormalizeAngle(double angle);
 };
 
 #endif /* UKF_H */
