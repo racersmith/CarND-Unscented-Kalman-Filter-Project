@@ -231,7 +231,7 @@ void UKF::Prediction(double delta_t) {
 		double cos_psi = cos(psi);
 		double sin_psi = sin(psi);
 
-		// Process
+		// Add process to predicted sigma point
 		if (fabs(psi_d) > 0.0001) {
 			double angle = psi + psi_d*delta_t;  // common calculation
 			double v_psi_d = v / psi_d;  // common calculation
@@ -246,8 +246,8 @@ void UKF::Prediction(double delta_t) {
 			py_p += v_dt * sin_psi;
 		}
 
-		// Noise
-		double half_dt2 = 0.5* delta_t * delta_t;
+		// Add noise to predicted sigma point
+		double half_dt2 = 0.5 * delta_t * delta_t;
 		px_p += half_dt2 * nu_a * cos_psi;
 		py_p += half_dt2 * nu_a * sin_psi;
 		v_p += delta_t * nu_a;
@@ -261,7 +261,7 @@ void UKF::Prediction(double delta_t) {
 		Xsig_pred_(3, i) = psi_p;
 		Xsig_pred_(4, i) = psi_d_p;
 	}
-
+	std::cout << "Sigma psi" << std::endl << Xsig_pred_.row(3) << std::endl << std::endl;
 
 	/**
 	Predicted state mean and covariance
@@ -272,7 +272,7 @@ void UKF::Prediction(double delta_t) {
 	for (int i = 0; i<n_sig_; i++) {
 		x_ += weights_(i) * Xsig_pred_.col(i);
 	}
-	std::cout << "Predict x_" << std::endl << x_ << std::endl << std::endl;
+	//std::cout << "Predict x_" << std::endl << x_ << std::endl << std::endl;
 
 	// Predicted state covariance matrix
 	P_.fill(0.0);
@@ -324,7 +324,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 		z_pred += weights_(i)*Z_sig.col(i);
 	}
 	
-	std::cout << "Lidar z_pred" << std::endl << z_pred << std::endl << std::endl;
+	//std::cout << "Lidar z_pred" << std::endl << z_pred << std::endl << std::endl;
 
 	// Calculate covariance of predicted Lidar measurement
 	MatrixXd S = MatrixXd(n_z, n_z);
@@ -391,43 +391,44 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 	Z_sig.fill(0.0);
 
 	for (int i = 0; i < n_sig_; i++) {
-
-		// extract values for better readibility
-		double p_x = Xsig_pred_(0, i);
-		double p_y = Xsig_pred_(1, i);
+		// extract values for readibility
+		double px = Xsig_pred_(0, i);
+		double py = Xsig_pred_(1, i);
 		double v = Xsig_pred_(2, i);
-		double yaw = Xsig_pred_(3, i);
-
-		// calculate common values
-		double v_cos_yaw = cos(yaw)*v;
-		double v_sin_yaw = sin(yaw)*v;
+		double psi = Xsig_pred_(3, i);
 
 		// measurement model
+		double range = sqrt(px*px + py*py);
+		Z_sig(0, i) = range;	// r, Range
 		
-		Z_sig(0, i) = sqrt(p_x*p_x + p_y*p_y);	// r, Range
-		
-		// Avoid atan2 domain errors
-		if (fabs(p_x) > 0.0001) {
-			Z_sig(1, i) = atan2(p_y, p_x);		// phi, Bearing
+		// Avoid atan2 domain errors at +/- inf
+		if (fabs(px) > 0.0001) {
+			Z_sig(1, i) = atan2(py, px);		// phi, Bearing
 		}
-		else if(p_y > 0.0001) {
+		else if(py > 0.0001) {
 			Z_sig(1, i) = M_PI / 2.0;
 		}
-		else if(p_y < -0.0001) {
+		else if(py < -0.0001) {
 			Z_sig(1, i) = -M_PI / 2.0;
 		}
 		else {
 			Z_sig(1, i) = 0.0;
 		}
 
-		// Avoid Div0
-		if (Z_sig(0, i) > 0.0001) {
-			Z_sig(2, i) = (p_x*v_cos_yaw + p_y*v_sin_yaw) / Z_sig(0, i);	// r_dot, Range Rate
+		// Avoid Div0 when range is 0
+		if (range > 0.0001) {
+			Z_sig(2, i) = (px*cos(psi)*v + py*sin(psi)*v) / range;	// r_dot, Range Rate
 		}
 		else {
 			Z_sig(2, i) = 0.0;
 		}
 	}
+
+	std::cout << 
+		"Radar Z_sig" << std::endl << 
+		Z_sig.row(0) << std::endl << 
+		Z_sig.row(1) << std::endl << 
+		Z_sig.row(2) << std::endl << std::endl;
 
 	// Calculate mean of predicted measurement
 	VectorXd z_pred = VectorXd(n_z);
@@ -443,9 +444,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 	S.fill(0.0);
 	for (int i = 0; i < n_sig_; i++) {
 		VectorXd z_diff = Z_sig.col(i) - z_pred;
-		z_diff(1) = NormalizeAngle(z_diff(1));
+		z_diff(1) = NormalizeAngle(z_diff(1));    // normalize bearing, phi
 		S += weights_(i) * z_diff * z_diff.transpose();
 	}
+
+	std::cout << "Radar S" << std::endl << S << std::endl << std::endl;
 
 	// Add sensor noise
 	S(0, 0) += std_radr_*std_radr_;
@@ -475,6 +478,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
 	// Residual of measurement to prediction
 	VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
+
+	std::cout << "Radar z" << std::endl << meas_package.raw_measurements_ << std::endl << std::endl;
 
 	//std::cout << z_diff(1) << " -> ";
 	z_diff(1) = NormalizeAngle(z_diff(1));  // bearing
